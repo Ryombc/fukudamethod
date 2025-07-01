@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マーケティング戦略 習熟度測定アプリ (AI評価機能付き)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', 'Inter', sans-serif;
+        }
+        .quiz-option {
+            transition: all 0.2s ease-in-out;
+        }
+        .quiz-option:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .quiz-option.selected {
+            background-color: #3b82f6; /* bg-blue-600 */
+            color: white;
+            border-color: #3b82f6; /* border-blue-600 */
+        }
+        .quiz-option.correct {
+            background-color: #16a34a; /* bg-green-600 */
+            color: white;
+            border-color: #16a34a;
+        }
+        .quiz-option.incorrect {
+            background-color: #dc2626; /* bg-red-600 */
+            color: white;
+            border-color: #dc2626;
+        }
+        .progress-bar-inner {
+            transition: width 0.5s ease-in-out;
+        }
+        textarea:disabled {
+            background-color: #f3f4f6;
+        }
+        .star-rating .star {
+            color: #e5e7eb; /* gray-300 */
+            transition: color 0.2s;
+        }
+        .star-rating .star.filled {
+            color: #f59e0b; /* amber-500 */
+        }
+        .loader {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app-container" class="container mx-auto p-4 md:p-8 max-w-4xl">
+        
+        <div id="start-screen" class="bg-white p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">マーケティング戦略 習熟度測定アプリ</h1>
+            <p class="text-gray-600 mb-6">
+                このアプリケーションは、あなたのマーケティング戦略に関する知識と応用力を測定します。<br>
+                全15問のクイズ（選択式・記述式）に挑戦し、回答ごとに表示される解説とAIによる評価で理解を深めましょう。
+            </p>
+            <p class="text-sm text-gray-500 mb-8">※記述問題のAI評価には数秒かかる場合があります。</p>
+            <button id="start-btn" class="bg-blue-600 text-white font-bold py-3 px-8 rounded-lg text-lg hover:bg-blue-700 transition-all duration-300 shadow-md hover:shadow-lg">
+                クイズを開始する
+            </button>
+        </div>
+
+        <div id="quiz-screen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg">
+            <div id="progress-container" class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <span id="question-counter" class="text-sm font-medium text-gray-600"></span>
+                    <span id="part-info" class="text-sm font-bold text-blue-600"></span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full progress-bar-inner"></div>
+                </div>
+            </div>
+
+            <div id="quiz-content">
+                <div id="scenario-container" class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200 hidden">
+                    <h3 class="font-bold text-lg mb-2 text-gray-700">シナリオ</h3>
+                    <p id="scenario-text" class="text-gray-600 whitespace-pre-wrap"></p>
+                </div>
+                <h2 id="question-title" class="text-xl md:text-2xl font-bold mb-6"></h2>
+                <div id="options-container" class="space-y-4"></div>
+            </div>
+
+            <div id="feedback-container" class="hidden mt-6 p-4 border-t-2 border-gray-200"></div>
+            
+            <div class="mt-8 flex justify-end">
+                <button id="action-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    回答を確定する
+                </button>
+            </div>
+        </div>
+
+        <div id="results-screen" class="hidden bg-white p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-3xl font-bold text-center mb-4">総合結果</h1>
+            <p class="text-lg text-gray-600 mb-6">お疲れ様でした！あなたの最終結果です。</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                <div id="mc-results" class="bg-gray-50 p-6 rounded-lg"></div>
+                <div id="fr-results" class="bg-gray-50 p-6 rounded-lg"></div>
+            </div>
+            <div class="text-center mt-10">
+                <button id="restart-btn" class="bg-gray-700 text-white font-bold py-3 px-8 rounded-lg text-lg hover:bg-gray-800 transition-colors">
+                    もう一度挑戦する
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Quiz Data ---
+        const quizData = [
+            // --- Part 1 ---
+            { part: '第1部', type: 'mc', question: '問1: マーケティング戦略の4つのフェーズを正しい順序で並べたものはどれですか。', options: ['施策立案 → 現状分析 → 施策検証 → 施策実行', '現状分析 → 施策立案 → 施策検証 → 施策実行', '現状分析 → 施策検証 → 施策立案 → 施策実行', '施策立案 → 施策実行 → 現状分析 → 施策検証'], answer: '現状分析 → 施策立案 → 施策検証 → 施策実行', explanation: 'マーケティング戦略は、(1)現状分析、(2)施策立案、(3)施策検証、(4)施策実行、という論理的な順序で進められます。' },
+            { part: '第1部', type: 'mc', question: '問2: 「現状分析フェーズ」の主たる目的として最も適切な説明はどれですか。', options: ['立案した施策の実現可能性を検証する。', '決定された施策を実行し、効果を測定する。', '現状を把握・課題を特定し、施策の方向性を導き出す。', '理想のブランドイメージを具体的に設計する。'], answer: '現状を把握・課題を特定し、施策の方向性を導き出す。', explanation: '「現状分析フェーズ」の核心は、自社、競合、市場、顧客を多角的に分析し、「現在地」を客観的に把握して今後の方向性を定めることです。' },
+            { part: '第1部', type: 'mc', question: '問3: 「カスタマージャーニーマップの設計」は、主にどのフェーズで行われるタスクですか。', options: ['現状分析フェーズ', '施策立案フェーズ', '施策検証フェーズ', '施策実行フェーズ'], answer: '施策検証フェーズ', explanation: '「カスタマージャーニーマップの設計」は、「施策検証フェーズ」の「プロモーション設計」タスクの一部です。顧客の購買プロセスを可視化し、効果的なタッチポイントを検討するために用います。' },
+            { part: '第1部', type: 'mc', question: '問4: マーケティング戦略における目標設定に関する記述として、正しいものはどれですか。', options: ['目標は一度設定されたら、以降のフェーズで変更されるべきではない。', '目標の確認や修正は、「施策立案」と「施策検証」の両フェーズで行われる可能性がある。', '目標設定は「施策実行フェーズ」の開始時にのみ行われる。', '目標の大きさは、戦略の方向性には影響を与えない。'], answer: '目標の確認や修正は、「施策立案」と「施策検証」の両フェーズで行われる可能性がある。', explanation: '戦略プロセスは動的であり、施策の実現可能性を検証する中で当初の目標が非現実的だと判明した場合など、目標自体を修正する必要が生じることがあります。' },
+            { part: '第1部', type: 'mc', question: '問5: 企業視点の4Pと顧客視点の4Cの対応関係について、誤っている組み合わせはどれですか。', options: ['製品 (Product) — 顧客価値 (Customer Value)', '価格 (Price) — 顧客利便性 (Convenience)', '流通 (Place) — 顧客利便性 (Convenience)', 'プロモーション (Promotion) — 顧客とのコミュニケーション (Communication)'], answer: '価格 (Price) — 顧客利便性 (Convenience)', explanation: '「価格 (Price)」に対応する顧客視点は「顧客にとっての経費 (Cost)」です。「顧客利便性 (Convenience)」に対応する企業視点は「流通 (Place)」です。' },
+            { part: '第1部', type: 'mc', question: '問6: STPP分析の各要素の説明として、最も適切なものはどれですか。', options: ['セグメンテーションとは、自社が狙うべき最も魅力的な顧客層を選定するプロセスである。', 'ターゲティングとは、競合に対する自社のユニークな立ち位置を顧客に知覚させる活動である。', 'ペルソナとは、ターゲット顧客のインサイトを深く理解するため、リアリティのある詳細な人物像を設定することである。', 'ポジショニングとは、ターゲット顧客のプロフィールを詳細に設定する手法である。'], answer: 'ペルソナとは、ターゲット顧客のインサイトを深く理解するため、リアリティのある詳細な人物像を設定することである。', explanation: 'aはターゲティング、bはポジショニングの説明です。ペルソナはターゲット層を具体的な一人の人間として捉え、共感を呼ぶ施策を立案するために用いられます。' },
+            { part: '第1部', type: 'mc', question: '問7: ブランドエクイティを構成する5つの要素（アーカーモデル）に含まれないものはどれですか。', options: ['ブランドロイヤルティ', '知覚品質', '市場シェア', 'ブランド連想'], answer: '市場シェア', explanation: 'アーカーのブランドエクイティモデルは、(1)ブランドの認知、(2)ブランド連想、(3)知覚品質、(4)ブランドロイヤルティ、(5)その他ブランド資産で構成されます。「市場シェア」はブランドの強さの指標ですが、直接の構成要素ではありません。' },
+            { part: '第1部', type: 'mc', question: '問8: 自社の「強み」を活かして市場の「機会」を最大限に活用する戦略は、クロスSWOT分析において何と呼ばれますか？', options: ['弱点克服戦略', '差別化戦略', '積極的攻勢戦略', '専守防衛戦略'], answer: '積極的攻勢戦略', explanation: '強み(Strength)と機会(Opportunity)を掛け合わせる戦略は、事業を積極的に成長させるための「積極的攻勢戦略」と呼ばれます。' },
+            // --- Part 2 ---
+            { part: '第2部', type: 'fr', scenario: '新興企業が高機能な写真編集ソフト「PhotoMaster AI」を開発。プロ向けに50以上の機能を搭載し、価格は競合の半額の月額500円。公式サイトからのみダウンロード可能。「50以上のプロ向け機能！」とプロモーションするも、売上は伸び悩んでいます。', question: '問9: この企業の4P戦略と顧客側の4Cの間に生じているであろう「ミスマッチ」を、①顧客価値、②顧客にとっての経費 の観点から具体的に指摘してください。', sub_questions: ['① 顧客価値 (Customer Value)のミスマッチ:', '② 顧客にとっての経費 (Cost)のミスマッチ:'], modelAnswer: ['企業は「機能の多さ」を価値だと考えているが、顧客にとっては複雑で分かりにくい可能性がある。顧客が求める真の価値は「簡単操作で“いい感じ”に仕上がること」かもしれない。', '月額500円は安価だが、顧客にとっては複雑な操作を学習するための「時間的・精神的コスト」が高く、トータルの経費は高いと判断されている可能性がある。'] },
+            { part: '第2部', type: 'fr', scenario: 'ある食品メーカーが、富裕層のシニア世代をターゲットとした新しい高級オーガニック冷凍総菜の宅配サービスを立ち上げようとしています。', question: '問10: この新サービスについて、STPP分析のフレームワークを用いて、①具体的な「ターゲットセグメント」と、②競合と差別化するための「ポジショニング・ステートメント」を記述してください。', sub_questions: ['① 狙うべき具体的な「ターゲットセグメント」:', '② 競合と差別化するための「ポジショニング・ステートメント」:'], modelAnswer: ['「アクティブシニア層」。60代後半～70代で経済的に裕福。自分の時間や健康への投資を惜しまず、活動的なライフスタイルを送る層。', '「アクティブなシニアの豊かな食生活を支える、管理栄養士監修の美食オーガニック総菜」'] },
+            // --- Part 3 ---
+            { part: '第3部', type: 'mc', scenario: 'あるユーザーがアパレルECサイトでTシャツを比較検討中。「写真だけだと生地の質感の違いがわからない。買って失敗して、返品するのは面倒だな…」と考えている。', question: '問11: このユーザーの思考の裏に隠された根源的な「インサイト」として、最も的確なものはどれですか。', options: ['最も安いものを購入したい。', '返品手続きが簡単か確かめたい。', '購入前に品質を確信し、選択を間違えたくない。', 'もっと多くの選択肢を見たい。'], answer: '購入前に品質を確信し、選択を間違えたくない。', explanation: 'ユーザーの根底にあるのは、「自分の選択が正しいという確信を得たい」という欲求と、「間違った選択をして後悔したくない」というリスク回避の心理です。このインサイトを理解することが、顧客の不安を解消する施策に繋がります。' },
+            { part: '第3部', type: 'fr', scenario: 'あなたは、共働きで忙しい子育て世帯をターゲットにした、料理キット（ミールキット）の宅配サービスをマーケティングしています。', question: '問12: このサービスの軸単語を「ミールキット」とします。①比較検討段階のユーザーを捉える「掛け合わせ単語」と、②ターゲット顧客の「ニーズやペイン」から発想した検索キーワードのフレーズを、それぞれ1つずつ作成してください。', sub_questions: ['① 掛け合わせ単語の例:', '② ニーズやペインから発想したキーワードの例:'], modelAnswer: ['「比較」や「お試し」など。（例: ミールキット 比較）', '「共働き 料理 時間ない」や「子供 栄養 バランス レシピ」など。'] },
+            { part: '第3部', type: 'mc', question: '問13: 顧客が商品を購入する際に感じる不安や懸念（知覚リスク）のうち、「人からどう思われるか、のけ者扱いにされないか」という不安は何的要因に分類されますか？', options: ['機能的要因', '経済的要因', '時間的要因', '社会的要因'], answer: '社会的要因', explanation: '他者からの評価や集団への帰属に関する不安は「社会的要因」に分類されます。企業はこれらの不安を解消することで、購入を後押しできます。' },
+            // --- Part 4 ---
+            { part: '第4部', type: 'fr', scenario: 'ケース：株式会社「Eco-Cycle」は、リサイクル素材を使ったデザイン性の高い自転車を販売。都市部で好調だが、全国展開で壁に直面。市場は性能重視の大手と価格重視の量販店に二極化している。', question: '問14: あなたはEco-Cycle社のコンサルタントです。全国展開に向けた現状分析として、①自社の「強み」と②直面している「脅威」をそれぞれ1つずつ記述してください。', sub_questions: ['① Eco-Cycleが持つ潜在的な「強み (Strength)」:', '② Eco-Cycleが直面している重大な「脅威 (Threat)」:'], modelAnswer: ['「リサイクル素材を活用した高いデザイン性」という、環境配慮と審美性を両立させた独自の製品コンセプト。', '性能で優位に立つ「大手スポーツバイクブランド」と、圧倒的な価格競争力を持つ「量販店ブランド」による「二極化した市場構造」。'] },
+            { part: '第4部', type: 'fr', scenario: '（問14の続き）あなたはEco-Cycle社のコンサルタントです。', question: '問15: 全国展開の初年度において、Eco-Cycleが特に重点的に構築すべき「ブランドエクイティの構成要素」を1つ選び、その理由を説明してください。', sub_questions: ['重点的に構築すべきブランドエクイティ要素:', 'その理由:'], modelAnswer: ['【要素】ブランド連想 (Brand Associations)\n【理由】「おしゃれ」「環境に良い」といったポジティブなイメージを即座に思い浮かべる状態を作り出すことが最優先。これにより競合との差別化を確立し、価格競争に巻き込まれないための基盤となるため。', '（別解）【要素】知覚品質 (Perceived Quality)\n【理由】リサイクル素材への「耐久性への不安」を払拭し、「デザインだけでなく、品質もしっかりしている」という信頼を醸成することが、長期的なブランド構築に不可欠なため。'] }
+        ];
+
+        // --- DOM Elements & State ---
+        const startScreen = document.getElementById('start-screen'), quizScreen = document.getElementById('quiz-screen'), resultsScreen = document.getElementById('results-screen');
+        const startBtn = document.getElementById('start-btn'), actionBtn = document.getElementById('action-btn'), restartBtn = document.getElementById('restart-btn');
+        const progressBar = document.getElementById('progress-bar'), questionCounter = document.getElementById('question-counter'), partInfo = document.getElementById('part-info');
+        const scenarioContainer = document.getElementById('scenario-container'), scenarioText = document.getElementById('scenario-text');
+        const questionTitle = document.getElementById('question-title'), optionsContainer = document.getElementById('options-container'), feedbackContainer = document.getElementById('feedback-container');
+        const mcResults = document.getElementById('mc-results'), frResults = document.getElementById('fr-results');
+
+        let currentQuestionIndex = 0, userAnswers = [], mcScore = 0, frRatings = [], isAnswerChecked = false;
+
+        // --- Core Functions ---
+        function startQuiz() {
+            currentQuestionIndex = 0;
+            userAnswers = [];
+            mcScore = 0;
+            frRatings = [];
+            isAnswerChecked = false;
+            startScreen.classList.add('hidden');
+            resultsScreen.classList.add('hidden');
+            quizScreen.classList.remove('hidden');
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            isAnswerChecked = false;
+            feedbackContainer.classList.add('hidden');
+            feedbackContainer.innerHTML = '';
+            optionsContainer.innerHTML = '';
+            
+            const currentQuestion = quizData[currentQuestionIndex];
+            const progress = ((currentQuestionIndex + 1) / quizData.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            questionCounter.textContent = `問題 ${currentQuestionIndex + 1} / ${quizData.length}`;
+            partInfo.textContent = currentQuestion.part;
+
+            scenarioContainer.classList.toggle('hidden', !currentQuestion.scenario);
+            if (currentQuestion.scenario) scenarioText.textContent = currentQuestion.scenario;
+            
+            questionTitle.textContent = currentQuestion.question;
+
+            if (currentQuestion.type === 'mc') {
+                actionBtn.disabled = true;
+                currentQuestion.options.forEach(option => {
+                    const button = document.createElement('button');
+                    button.innerHTML = option;
+                    button.className = 'w-full text-left p-4 border-2 border-gray-300 rounded-lg quiz-option bg-white';
+                    button.onclick = () => selectMcAnswer(button);
+                    optionsContainer.appendChild(button);
+                });
+            } else if (currentQuestion.type === 'fr') {
+                actionBtn.disabled = false;
+                currentQuestion.sub_questions.forEach((subQ, index) => {
+                    optionsContainer.innerHTML += `
+                        <label for="fr-answer-${index}" class="block font-medium text-gray-700 mb-2">${subQ}</label>
+                        <textarea id="fr-answer-${index}" rows="3" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4" placeholder="ここに回答を入力してください..."></textarea>
+                    `;
+                });
+            }
+            actionBtn.textContent = '回答を確定する';
+        }
+
+        function selectMcAnswer(button) {
+            if (isAnswerChecked) return;
+            optionsContainer.querySelectorAll('button').forEach(btn => btn.classList.remove('selected'));
+            button.classList.add('selected');
+            actionBtn.disabled = false;
+        }
+
+        async function handleAction() {
+            if (isAnswerChecked) {
+                currentQuestionIndex++;
+                if (currentQuestionIndex < quizData.length) loadQuestion();
+                else showResults();
+                return;
+            }
+
+            isAnswerChecked = true;
+            actionBtn.disabled = true;
+            const currentQuestion = quizData[currentQuestionIndex];
+            feedbackContainer.classList.remove('hidden');
+
+            if (currentQuestion.type === 'mc') {
+                checkMcAnswer(currentQuestion);
+            } else if (currentQuestion.type === 'fr') {
+                await checkFrAnswer(currentQuestion);
+            }
+        }
+
+        function checkMcAnswer(question) {
+            const selectedButton = optionsContainer.querySelector('.selected');
+            const userAnswer = selectedButton.innerHTML;
+            const isCorrect = userAnswer === question.answer;
+
+            if (isCorrect) {
+                mcScore++;
+                selectedButton.classList.add('correct');
+            } else {
+                selectedButton.classList.add('incorrect');
+                optionsContainer.querySelectorAll('button').forEach(btn => {
+                    if (btn.innerHTML === question.answer) btn.classList.add('correct');
+                });
+            }
+            
+            optionsContainer.querySelectorAll('button').forEach(btn => btn.disabled = true);
+            
+            feedbackContainer.innerHTML = `<h3 class="font-bold text-lg mb-2">${isCorrect ? '正解！' : '不正解'}</h3><p class="text-gray-600">${question.explanation}</p>`;
+            actionBtn.textContent = '次の問題へ';
+            actionBtn.disabled = false;
+        }
+
+        async function checkFrAnswer(question) {
+            document.querySelectorAll('#options-container textarea').forEach(el => el.disabled = true);
+            feedbackContainer.innerHTML = `<div class="flex items-center justify-center flex-col"><div class="loader"></div><p class="mt-2 text-gray-600">AIがあなたの回答を評価中です...</p></div>`;
+            
+            const userFrAnswers = question.sub_questions.map((_, i) => document.getElementById(`fr-answer-${i}`).value || '（未回答）');
+            
+            try {
+                const evaluation = await evaluateWithAI(question, userFrAnswers);
+                frRatings.push(evaluation.rating);
+                displayFrFeedback(question, userFrAnswers, evaluation);
+            } catch (error) {
+                console.error("AI evaluation failed:", error);
+                displayFrFeedback(question, userFrAnswers, { rating: 0, feedback: "AI評価中にエラーが発生しました。時間をおいて再度お試しください。" });
+            }
+            
+            actionBtn.textContent = '次の問題へ';
+            actionBtn.disabled = false;
+        }
+
+        function displayFrFeedback(question, userAnswers, evaluation) {
+            let feedbackHTML = `
+                <h3 class="font-bold text-lg mb-3">AIによる評価</h3>
+                <div class="flex items-center mb-2">
+                    <div class="star-rating text-2xl mr-2">${renderStars(evaluation.rating)}</div>
+                    <span class="font-bold text-xl">${evaluation.rating} / 5</span>
+                </div>
+                <p class="text-gray-700 bg-gray-100 p-3 rounded-md mb-6">${evaluation.feedback}</p>
+            `;
+
+            question.sub_questions.forEach((subQ, i) => {
+                feedbackHTML += `
+                    <div class="mt-4">
+                        <p class="font-semibold text-sm text-gray-600">${subQ}</p>
+                        <div class="text-sm p-3 bg-blue-50 border border-blue-200 rounded-md mt-1"><b>あなたの回答:</b><br>${userAnswers[i].replace(/\n/g, '<br>')}</div>
+                        <div class="text-sm p-3 bg-green-50 border border-green-200 rounded-md mt-1"><b>解答例:</b><br>${question.modelAnswer[i].replace(/\n/g, '<br>')}</div>
+                    </div>
+                `;
+            });
+            feedbackContainer.innerHTML = feedbackHTML;
+        }
+        
+        function renderStars(rating) {
+            let starsHTML = '';
+            for (let i = 1; i <= 5; i++) {
+                starsHTML += `<span class="star ${i <= rating ? 'filled' : ''}">★</span>`;
+            }
+            return starsHTML;
+        }
+
+        async function evaluateWithAI(question, userAnswers) {
+            const prompt = `あなたは知識豊富で公平なマーケティング戦略の講師です。以下の質問に対するユーザーの回答を、提示された模範解答を基準に評価してください。評価は1から5の5段階評価とし、評価の理由を簡潔で建設的なフィードバックとして日本語で提供してください。
+
+# 質問
+${question.question}
+
+# 模範解答
+${question.modelAnswer.map((ans, i) => `${question.sub_questions[i]}\n${ans}`).join('\n\n')}
+
+# ユーザーの回答
+${userAnswers.map((ans, i) => `${question.sub_questions[i]}\n${ans}`).join('\n\n')}
+
+# 出力形式
+以下のJSON形式で回答してください。
+{
+  "rating": <1から5の整数>,
+  "feedback": "<日本語での簡潔で建設的なフィードバック>"
+}
+`;
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            
+            // =================================================================
+            // ▼▼▼ GitHubで公開する際はこの部分にご自身のAPIキーを設定してください ▼▼▼
+            // =================================================================
+            const apiKey = "AIzaSyAJFazgSYkrM63lWemkHvdLjy9NVwS2uJ8"; // 例: "AIzaSy...YOUR_API_KEY"
+            // =================================================================
+            
+            if (!apiKey) {
+                return { rating: 0, feedback: "APIキーが設定されていません。コード内の 'apiKey' 変数にあなたのGoogle AI APIキーを設定してください。" };
+            }
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed with status ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                const text = result.candidates[0].content.parts[0].text;
+                const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+                return JSON.parse(cleanedText);
+            } else {
+                throw new Error("Invalid response structure from AI");
+            }
+        }
+
+        function showResults() {
+            quizScreen.classList.add('hidden');
+            resultsScreen.classList.remove('hidden');
+            
+            const mcTotal = quizData.filter(q => q.type === 'mc').length;
+            mcResults.innerHTML = `
+                <h3 class="text-xl font-bold mb-3">選択問題</h3>
+                <p class="text-3xl font-bold">${mcScore} <span class="text-lg font-normal">/ ${mcTotal} 問正解</span></p>
+                <p class="mt-2 text-gray-600">基礎知識の定着度を示します。</p>
+            `;
+
+            const frTotal = quizData.filter(q => q.type === 'fr').length;
+            const frAverage = frRatings.length > 0 ? (frRatings.reduce((a, b) => a + b, 0) / frRatings.length).toFixed(1) : 'N/A';
+            frResults.innerHTML = `
+                <h3 class="text-xl font-bold mb-3">記述問題 (AI評価)</h3>
+                <p class="text-3xl font-bold">${frAverage} <span class="text-lg font-normal">/ 5.0 平均スコア</span></p>
+                <p class="mt-2 text-gray-600">実践的な応用力・思考力を示します。</p>
+            `;
+        }
+
+        // --- Event Listeners ---
+        startBtn.addEventListener('click', startQuiz);
+        actionBtn.addEventListener('click', handleAction);
+        restartBtn.addEventListener('click', startQuiz);
+
+    </script>
+</body>
+</html>
